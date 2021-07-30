@@ -65,7 +65,36 @@ azel-${BAZEL_VERSION}-installer-linux-x86_64.sh" && \
     /bazel/installer.sh  && \
     rm -f /bazel/installer.sh
 
+# Download and generate the MediaPipe VGGish feature extraction graph
 COPY . /mediapipe/
+RUN mkdir /tmp/mediapipe
+RUN cd /tmp/mediapipe && \
+curl -O http://data.yt8m.org/pca_matrix_data/inception3_mean_matrix_data.pb && \
+curl -O http://data.yt8m.org/pca_matrix_data/inception3_projection_matrix_data.pb && \
+curl -O http://data.yt8m.org/pca_matrix_data/vggish_mean_matrix_data.pb && \
+curl -O http://data.yt8m.org/pca_matrix_data/vggish_projection_matrix_data.pb && \
+curl -O http://download.tensorflow.org/models/image/imagenet/inception-2015-12-05.tgz && \
+tar -xvf /tmp/mediapipe/inception-2015-12-05.tgz
+RUN python -m mediapipe.examples.desktop.youtube8m.generate_vggish_frozen_graph
+
+# Build the youtube8m feature extraction example binary
+RUN bazel build -c opt --linkopt=-s --define MEDIAPIPE_DISABLE_GPU=1 --define no_aws_support=true mediapipe/examples/desktop/youtube8m:extract_yt8m_features
+
+# Install Flask
+RUN pip3 install -U Flask
+
+# Start the server
+RUN export FLASK_APP=feature_extraction_server
+RUN export FLASK_ENV=development
+CMD ["flask", "run", "--host=0.0.0.0"]
+
+# Use the stuff below instead for production
+# RUN export FLASK_ENV=production
+# CMD ["flask", "run", "--host=0.0.0.0"]
+
+
+# ENTRYPOINT ["python"]
+# CMD -m mediapipe.examples.desktop.youtube8m.generate_input_sequence_example --path_to_input_video=/shared/00_input_tmp/0002bz1GNsUP.mp4 --clip_end_time_sec=120 && GLOG_logtostderr=1 bazel-bin/mediapipe/examples/desktop/youtube8m/extract_yt8m_features --calculator_graph_config_file=mediapipe/graphs/youtube8m/feature_extraction.pbtxt --input_side_packets=input_sequence_example=/tmp/mediapipe/metadata.pb --output_side_packets=output_sequence_example=/shared/01_feature_pb_tmp/0002bz1GNsUP.pb
 
 # If we want the docker image to contain the pre-built object_detection_offline_demo binary, do the following
 # RUN bazel build -c opt --define MEDIAPIPE_DISABLE_GPU=1 mediapipe/examples/desktop/demo:object_detection_tensorflow_demo
